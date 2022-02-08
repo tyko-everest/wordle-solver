@@ -172,7 +172,7 @@ fn make_guess(guess: &String, target: &String, info: &mut KnownInfo) {
     }
 }
 
-fn guess(target_word: &String, words: &Vec<String>, scores: &Vec<usize>) {
+fn guess(target_word: &String, words: &Vec<String>, scores: &Vec<usize>) -> usize {
     let mut word_infos: Vec<WordInfo> = vec![];
     for (word, score) in izip!(words, scores) {
         word_infos.push(WordInfo {
@@ -183,17 +183,19 @@ fn guess(target_word: &String, words: &Vec<String>, scores: &Vec<usize>) {
     let mut info = KnownInfo::new();
     if target_word.len() != 5 {
         println!("not 5 letter word, try again");
-        return;
+        return 0;
     }
     if !words.contains(&target_word) {
         println!("word not in dictionary, try again");
-        return;
+        return 0;
     }
+    let mut count = 0;
     loop {
         let best_word = get_best_word(&mut word_infos);
-        println!("guessing: {}", best_word);
+        // println!("guessing: {}", best_word);
+        count += 1;
         if best_word == *target_word {
-            break;
+            return count;
         } else {
             make_guess(&best_word, &target_word, &mut info);
             word_infos = get_possible_words(&info, &word_infos);
@@ -205,25 +207,28 @@ fn main() {
     let (words, word_freqs) = load_words("5_letters.csv".to_string());
     let pos_freqs = get_letter_freqs(&words);
     let scores = get_scores(&words, &pos_freqs, &word_freqs);
-    let mut full_word_infos: Vec<WordInfo> = vec![];
-    for (word, score) in izip!(&words, &scores) {
-        full_word_infos.push(WordInfo {
-            word: word.clone(),
-            score: *score,
-        });
-    }
 
     let stdin = io::stdin();
     let mut stdout = io::stdout();
 
-    loop {
-        let mut target_word = String::new();
-        print!("word to guess: ");
-        stdout.flush().unwrap();
-        stdin.lock().read_line(&mut target_word).unwrap();
-        target_word = target_word.trim().to_string();
-        guess(&target_word, &words, &scores);
+    // loop {
+    //     let mut target_word = String::new();
+    //     print!("word to guess: ");
+    //     stdout.flush().unwrap();
+    //     stdin.lock().read_line(&mut target_word).unwrap();
+    //     target_word = target_word.trim().to_string();
+    //     guess(&target_word, &words, &scores);
+    // }
+
+    let mut guess_counts = 0;
+    for (i, word) in words.iter().enumerate() {
+        // println!("guessing word {}/{}: {}", i, words.len(), word);
+        guess_counts += guess(&word, &words, &scores);
     }
+    println!(
+        "average tries to guess was: {}",
+        guess_counts as f64 / words.len() as f64
+    );
 }
 
 #[cfg(test)]
