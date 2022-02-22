@@ -1,6 +1,6 @@
 use itertools::izip;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader};
 use std::vec;
 
 fn load_words(file: String) -> Vec<String> {
@@ -19,43 +19,57 @@ fn load_words(file: String) -> Vec<String> {
 
 #[derive(Clone)]
 struct LetterFreq {
-    counts: Vec<usize>,
+    positions: Vec<Vec<usize>>,
+    totals: Vec<usize>,
+    max_positions: Vec<usize>,
+    max_totals: usize,
 }
 
 impl LetterFreq {
     fn new() -> LetterFreq {
         LetterFreq {
-            counts: vec![0; 26],
+            positions: vec![vec![0; 26]; 5],
+            totals: vec![0; 26],
+            max_positions: vec![0; 5],
+            max_totals: 0,
         }
     }
 
-    fn inc(&mut self, letter: char) {
-        self.counts[letter as usize - 'a' as usize] += 1;
+    fn inc(&mut self, pos: usize, letter: char) {
+        self.positions[pos][letter as usize - 'a' as usize] += 1;
+        self.totals[letter as usize - 'a' as usize] += 1;
     }
 
-    fn get_count(&self, letter: char) -> usize {
-        self.counts[letter as usize - 'a' as usize]
-    }
-
-    fn get_highest(&self) -> char {
-        let mut max_cnt = 0;
-        let mut max_i = 0;
-        for (i, cnt) in self.counts.iter().enumerate() {
-            if *cnt > max_cnt {
-                max_cnt = *cnt;
-                max_i = i;
-            }
+    fn calc_maxs(&mut self) {
+        for (pos_freqs, max_freq) in izip!(&self.positions, &mut self.max_positions) {
+            *max_freq = *pos_freqs.iter().max().unwrap();
         }
-        ((max_i as u8) + 'a' as u8) as char
+        self.max_totals = *self.totals.iter().max().unwrap();
+    }
+
+    fn get_pos_count(&self, pos: usize, letter: char) -> usize {
+        self.positions[pos][letter as usize - 'a' as usize]
+    }
+
+    fn get_total_count(&self, letter: char) -> usize {
+        self.totals[letter as usize - 'a' as usize]
+    }
+
+    fn get_pos_max(&self, pos: usize) -> usize {
+        self.max_positions[pos]
+    }
+
+    fn get_total_max(&self) -> usize {
+        self.max_totals
     }
 }
 
-fn get_letter_freqs(words: &Vec<String>) -> Vec<LetterFreq> {
-    let mut ret: Vec<LetterFreq> = vec![LetterFreq::new(); 5];
+fn get_letter_freqs(words: &Vec<String>) -> LetterFreq {
+    let mut ret: LetterFreq = LetterFreq::new();
     for word in words {
         for i in 0..5 {
             let c = word.chars().nth(i).unwrap();
-            ret[i].inc(c);
+            ret.inc(i, c);
         }
     }
     ret
@@ -119,13 +133,20 @@ fn get_possible_words(info: &KnownInfo, words: &Vec<WordInfo>) -> Vec<WordInfo> 
     pos_word_infos
 }
 
-fn get_scores(words: &Vec<String>, pos_freqs: &Vec<LetterFreq>) -> Vec<usize> {
+fn get_scores(words: &Vec<String>, freqs: &LetterFreq) -> Vec<usize> {
     let mut scores: Vec<usize> = vec![];
     for word in words {
-        let mut score: usize = 0;
+        let mut score_pos: usize = 0;
         for (pos, c) in word.chars().enumerate() {
-            score += pos_freqs[pos].get_count(c);
+            score_pos += freqs.get_pos_count(pos, c);
         }
+
+        let mut score_total: usize = 0;
+        for (pos, c) in word.chars().enumerate() {
+            score_total += freqs.get_total_count(c);
+        }
+
+        let score = score_pos + score_total * freqs.get_pos_max(0) / freqs.get_total_max() / 2;
         scores.push(score as usize);
     }
     scores
@@ -202,8 +223,9 @@ fn guess(target_word: &String, words: &Vec<String>, scores: &Vec<usize>) -> usiz
 
 fn main() {
     let words = load_words("wordle-answers-alphabetical.txt".to_string());
-    let pos_freqs = get_letter_freqs(&words);
-    let scores = get_scores(&words, &pos_freqs);
+    let mut freqs = get_letter_freqs(&words);
+    freqs.calc_maxs();
+    let scores = get_scores(&words, &freqs);
 
     let stdin = io::stdin();
     let mut stdout = io::stdout();
