@@ -1,19 +1,20 @@
 use itertools::izip;
-use std::io::{self, BufRead, Write};
+use std::fs::File;
+use std::io::{self, BufRead, BufReader, Write};
 use std::vec;
 
-fn load_words(file: String) -> (Vec<String>, Vec<f32>) {
+fn load_words(file: String) -> Vec<String> {
     let mut words = vec![];
-    let mut freqs = vec![];
-    let mut rdr = csv::Reader::from_path(file).unwrap();
-    for res in rdr.records() {
-        let record = res.unwrap();
-        let word = record.get(0).unwrap();
-        let freq: f32 = record.get(1).unwrap().parse().unwrap();
-        words.push(word.to_string());
-        freqs.push(freq);
+    let file = File::open(file).expect("coulnd't find word list");
+    let rdr = BufReader::new(file);
+    for line in rdr.lines() {
+        if let Ok(word) = line {
+            words.push(word.to_string());
+        } else {
+            panic!("error parsing word list")
+        }
     }
-    (words, freqs)
+    words
 }
 
 #[derive(Clone)]
@@ -118,18 +119,14 @@ fn get_possible_words(info: &KnownInfo, words: &Vec<WordInfo>) -> Vec<WordInfo> 
     pos_word_infos
 }
 
-fn get_scores(
-    words: &Vec<String>,
-    pos_freqs: &Vec<LetterFreq>,
-    word_freqs: &Vec<f32>,
-) -> Vec<usize> {
+fn get_scores(words: &Vec<String>, pos_freqs: &Vec<LetterFreq>) -> Vec<usize> {
     let mut scores: Vec<usize> = vec![];
-    for (word, word_freq) in izip!(words, word_freqs) {
+    for word in words {
         let mut score: usize = 0;
         for (pos, c) in word.chars().enumerate() {
             score += pos_freqs[pos].get_count(c);
         }
-        scores.push(score * ((*word_freq * 1000.0) as usize));
+        scores.push(score as usize);
     }
     scores
 }
@@ -204,9 +201,9 @@ fn guess(target_word: &String, words: &Vec<String>, scores: &Vec<usize>) -> usiz
 }
 
 fn main() {
-    let (words, word_freqs) = load_words("5_letters.csv".to_string());
+    let words = load_words("wordle-answers-alphabetical.txt".to_string());
     let pos_freqs = get_letter_freqs(&words);
-    let scores = get_scores(&words, &pos_freqs, &word_freqs);
+    let scores = get_scores(&words, &pos_freqs);
 
     let stdin = io::stdin();
     let mut stdout = io::stdout();
@@ -241,7 +238,7 @@ mod tests {
     fn get_possible_words() {
         use crate::*;
 
-        let words = load_words("5_letters.csv".to_string());
+        let words = load_words("wordle-answers-alphabetical.txt".to_string());
         let mut info = KnownInfo::new();
         info.pos_info = vec![
             PosInfo::None,
