@@ -72,16 +72,11 @@ fn get_letter_freqs(words: &Vec<String>) -> LetterFreq {
             ret.inc(i, c);
         }
     }
+    ret.calc_maxs();
     ret
 }
 
-#[derive(Clone)]
-struct WordInfo {
-    word: String,
-    score: usize,
-}
-
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 enum PosInfo {
     None,
     Not(Vec<char>),
@@ -104,10 +99,10 @@ impl KnownInfo {
     }
 }
 
-fn get_possible_words(info: &KnownInfo, words: &Vec<WordInfo>) -> Vec<WordInfo> {
-    let mut pos_word_infos = vec![];
-    'word_loop: for word_info in words {
-        for (i, c) in word_info.word.chars().enumerate() {
+fn get_possible_words(info: &KnownInfo, words: &Vec<String>) -> Vec<String> {
+    let mut possible_words = vec![];
+    'word_loop: for word in words {
+        for (i, c) in word.chars().enumerate() {
             if info.not_contains.contains(&c) {
                 continue 'word_loop;
             }
@@ -125,15 +120,15 @@ fn get_possible_words(info: &KnownInfo, words: &Vec<WordInfo>) -> Vec<WordInfo> 
                 }
             }
         }
-        if !info.contains.iter().all(|c| word_info.word.contains(*c)) {
+        if !info.contains.iter().all(|c| word.contains(*c)) {
             continue 'word_loop;
         }
-        pos_word_infos.push((*word_info).clone());
+        possible_words.push((*word).clone());
     }
-    pos_word_infos
+    possible_words
 }
 
-fn get_scores(words: &Vec<String>, freqs: &LetterFreq) -> Vec<usize> {
+fn get_scores(words: &Vec<String>, freqs: &LetterFreq, info: &KnownInfo) -> Vec<usize> {
     let mut scores: Vec<usize> = vec![];
     for word in words {
         let mut score_pos: usize = 0;
@@ -142,28 +137,31 @@ fn get_scores(words: &Vec<String>, freqs: &LetterFreq) -> Vec<usize> {
         }
 
         let mut score_total: usize = 0;
-        for (pos, c) in word.chars().enumerate() {
-            score_total += freqs.get_total_count(c);
+        for c in word.chars() {
+            let mut score_temp = freqs.get_total_count(c);
+            if info.contains.contains(&c) {
+                score_temp /= 2;
+            }
+            score_total += score_temp;
         }
 
-        let score = score_pos + score_total * freqs.get_pos_max(0) / freqs.get_total_max() / 2;
+        // let score = score_pos + score_total * freqs.get_pos_max(0) / freqs.get_total_max() / 2;
+        let score = score_pos;
         scores.push(score as usize);
     }
     scores
 }
 
-fn get_best_word(word_infos: &mut Vec<WordInfo>) -> String {
-    let mut best_word = WordInfo {
-        word: String::new(),
-        score: 0,
-    };
-    for word_info in word_infos {
-        if word_info.score > best_word.score {
-            best_word.word = word_info.word.clone();
-            best_word.score = word_info.score;
+fn get_best_word(words: &Vec<String>, scores: &Vec<usize>) -> String {
+    let mut best_word: &String = &String::new();
+    let mut best_score = 0;
+    for (word, score) in izip!(words, scores) {
+        if *score > best_score {
+            best_word = word;
+            best_score = *score;
         }
     }
-    best_word.word.clone()
+    best_word.clone()
 }
 
 // make a guess and get back the known info from that guess
@@ -190,15 +188,7 @@ fn make_guess(guess: &String, target: &String, info: &mut KnownInfo) {
     }
 }
 
-fn guess(target_word: &String, words: &Vec<String>, scores: &Vec<usize>) -> usize {
-    let mut word_infos: Vec<WordInfo> = vec![];
-    for (word, score) in izip!(words, scores) {
-        word_infos.push(WordInfo {
-            word: word.clone(),
-            score: *score,
-        });
-    }
-    let mut info = KnownInfo::new();
+fn find_word(target_word: &String, words: &Vec<String>) -> usize {
     if target_word.len() != 5 {
         println!("not 5 letter word, try again");
         return 0;
@@ -207,25 +197,27 @@ fn guess(target_word: &String, words: &Vec<String>, scores: &Vec<usize>) -> usiz
         println!("word not in dictionary, try again");
         return 0;
     }
+
+    let mut words = words.clone();
+    let mut info = KnownInfo::new();
     let mut count = 0;
     loop {
-        let best_word = get_best_word(&mut word_infos);
+        let freqs = get_letter_freqs(&words);
+        let scores = get_scores(&words, &freqs, &info);
+        let best_word = get_best_word(&words, &scores);
         // println!("guessing: {}", best_word);
         count += 1;
         if best_word == *target_word {
             return count;
         } else {
             make_guess(&best_word, &target_word, &mut info);
-            word_infos = get_possible_words(&info, &word_infos);
+            words = get_possible_words(&info, &words);
         }
     }
 }
 
 fn main() {
-    let words = load_words("wordle-answers-alphabetical.txt".to_string());
-    let mut freqs = get_letter_freqs(&words);
-    freqs.calc_maxs();
-    let scores = get_scores(&words, &freqs);
+    let mut words = load_words("wordle-answers-alphabetical.txt".to_string());
 
     let stdin = io::stdin();
     let mut stdout = io::stdout();
@@ -242,7 +234,7 @@ fn main() {
     let mut guess_counts = 0;
     for (i, word) in words.iter().enumerate() {
         // println!("guessing word {}/{}: {}", i, words.len(), word);
-        guess_counts += guess(&word, &words, &scores);
+        guess_counts += find_word(&word, &words);
     }
     println!(
         "average tries to guess was: {}",
