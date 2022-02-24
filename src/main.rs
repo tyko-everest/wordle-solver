@@ -76,26 +76,70 @@ fn get_letter_freqs(words: &Vec<String>) -> LetterFreq {
     ret
 }
 
-#[derive(Clone, PartialEq)]
-enum PosInfo {
+#[derive(Clone)]
+enum PositionInfo {
     None,
     Not(Vec<char>),
     Is(char),
 }
 
+#[derive(Clone, Copy)]
+struct GeneralInfo {
+    exactly: bool,
+    count: usize,
+}
+
+impl GeneralInfo {
+    fn new() -> GeneralInfo {
+        GeneralInfo {
+            exactly: false,
+            count: 0,
+        }
+    }
+
+    fn is_enough(&self, found_count: usize) -> bool {
+        if self.exactly {
+            if found_count == self.count {
+                return true;
+            }
+        } else {
+            if found_count >= self.count {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+/*
+Positional info:
+- grey/yellow: this character will not be here
+- green: this character will be here
+General info:
+- for a character on a guess:
+    - green/yellow + no grey: at least this number of this char
+    - green/yellow + grey: exactly this many of this char
+ */
 struct KnownInfo {
-    pos_info: Vec<PosInfo>,
-    not_contains: Vec<char>,
-    contains: Vec<char>,
+    pos_info: Vec<PositionInfo>,
+    count: Vec<GeneralInfo>,
 }
 
 impl KnownInfo {
     fn new() -> KnownInfo {
         KnownInfo {
-            pos_info: vec![PosInfo::None; 5],
-            not_contains: vec![],
-            contains: vec![],
+            pos_info: vec![PositionInfo::None; 5],
+            count: vec![GeneralInfo::new(); 26],
         }
+    }
+
+    fn get_count(&self, letter: char) -> GeneralInfo {
+        self.count[letter as usize - 'a' as usize]
+    }
+
+    fn set_count(&mut self, letter: char, amount: usize, exactly: bool) {
+        self.count[letter as usize - 'a' as usize].count = amount;
+        self.count[letter as usize - 'a' as usize].exactly = exactly;
     }
 }
 
@@ -103,25 +147,27 @@ fn get_possible_words(info: &KnownInfo, words: &Vec<String>) -> Vec<String> {
     let mut possible_words = vec![];
     'word_loop: for word in words {
         for (i, c) in word.chars().enumerate() {
-            if info.not_contains.contains(&c) {
-                continue 'word_loop;
-            }
+            // check the positional info to see if there are any contradictions
             match &info.pos_info[i] {
-                PosInfo::None => {}
-                PosInfo::Not(not_chars) => {
+                PositionInfo::None => {}
+                PositionInfo::Not(not_chars) => {
                     if not_chars.contains(&c) {
                         continue 'word_loop;
                     }
                 }
-                PosInfo::Is(is_char) => {
+                PositionInfo::Is(is_char) => {
                     if *is_char != c {
                         continue 'word_loop;
                     }
                 }
             }
         }
-        if !info.contains.iter().all(|c| word.contains(*c)) {
-            continue 'word_loop;
+        // check the general info to see if there is enough of each letter
+        for c in 'a'..'z' {
+            let found_count = word.chars().filter(|ch| *ch == c).count();
+            if !info.get_count(c).is_enough(found_count) {
+                continue 'word_loop;
+            }
         }
         possible_words.push((*word).clone());
     }
@@ -138,15 +184,11 @@ fn get_scores(words: &Vec<String>, freqs: &LetterFreq, info: &KnownInfo) -> Vec<
 
         let mut score_total: usize = 0;
         for c in word.chars() {
-            let mut score_temp = freqs.get_total_count(c);
-            if info.contains.contains(&c) {
-                score_temp /= 2;
-            }
-            score_total += score_temp;
+            score_total += freqs.get_total_count(c);
         }
 
-        // let score = score_pos + score_total * freqs.get_pos_max(0) / freqs.get_total_max() / 2;
-        let score = score_pos;
+        let score = score_pos + score_total * freqs.get_pos_max(0) / freqs.get_total_max() / 3;
+        // let score = score_pos;
         scores.push(score as usize);
     }
     scores
@@ -166,24 +208,28 @@ fn get_best_word(words: &Vec<String>, scores: &Vec<usize>) -> String {
 
 // make a guess and get back the known info from that guess
 fn make_guess(guess: &String, target: &String, info: &mut KnownInfo) {
+    // update positional info
     for (guess_char, target_char, pos_info) in
         izip!(guess.chars(), target.chars(), info.pos_info.iter_mut())
     {
-        if target.contains(guess_char) {
-            // TODO ensure no dups
-            info.contains.push(guess_char);
-            if guess_char == target_char {
-                *pos_info = PosInfo::Is(guess_char);
-            } else {
-                match pos_info {
-                    PosInfo::None => *pos_info = PosInfo::Not(vec![guess_char]),
-                    PosInfo::Not(not_char) => not_char.push(guess_char),
-                    _ => panic!("invalid pos_info"),
-                }
-            }
+        if guess_char == target_char {
+            *pos_info = PositionInfo::Is(guess_char);
         } else {
-            // TODO ensure no dups
-            info.not_contains.push(guess_char);
+            match pos_info {
+                PositionInfo::None => *pos_info = PositionInfo::Not(vec![guess_char]),
+                PositionInfo::Not(not_char) => not_char.push(guess_char),
+                _ => panic!("invalid pos_info"),
+            }
+        }
+    }
+    // update general info
+    for guess_char in guess.chars() {
+        let guess_count = guess.chars().filter(|ch| *ch == guess_char).count();
+        let target_count = target.chars().filter(|ch| *ch == guess_char).count();
+        if guess_count <= target_count {
+            info.set_count(guess_char, guess_count, false);
+        } else {
+            info.set_count(guess_char, target_count, true);
         }
     }
 }
@@ -205,13 +251,16 @@ fn find_word(target_word: &String, words: &Vec<String>) -> usize {
         let freqs = get_letter_freqs(&words);
         let scores = get_scores(&words, &freqs, &info);
         let best_word = get_best_word(&words, &scores);
-        // println!("guessing: {}", best_word);
+        println!("guessing: {}", best_word);
         count += 1;
         if best_word == *target_word {
             return count;
         } else {
             make_guess(&best_word, &target_word, &mut info);
             words = get_possible_words(&info, &words);
+            if words.len() == 0 {
+                println!("huh")
+            }
         }
     }
 }
@@ -221,6 +270,8 @@ fn main() {
 
     let stdin = io::stdin();
     let mut stdout = io::stdout();
+
+    find_word(&"angry".to_string(), &words);
 
     // loop {
     //     let mut target_word = String::new();
@@ -232,14 +283,18 @@ fn main() {
     // }
 
     let mut guess_counts = 0;
+    let mut bins = vec![0; 10];
     for (i, word) in words.iter().enumerate() {
         // println!("guessing word {}/{}: {}", i, words.len(), word);
-        guess_counts += find_word(&word, &words);
+        let attempts = find_word(&word, &words);
+        guess_counts += attempts;
+        bins[attempts] += 1;
     }
     println!(
         "average tries to guess was: {}",
         guess_counts as f64 / words.len() as f64
     );
+    println!("bins: {:?}", bins);
 }
 
 #[cfg(test)]
@@ -255,11 +310,11 @@ mod tests {
         let words = load_words("wordle-answers-alphabetical.txt".to_string());
         let mut info = KnownInfo::new();
         info.pos_info = vec![
-            PosInfo::None,
-            PosInfo::Not(vec!['e']),
-            PosInfo::None,
-            PosInfo::Is('e'),
-            PosInfo::Is('r'),
+            PositionInfo::None,
+            PositionInfo::Not(vec!['e']),
+            PositionInfo::None,
+            PositionInfo::Is('e'),
+            PositionInfo::Is('r'),
         ];
         info.not_contains = vec![
             't', 'y', 'u', 'i', 'o', 'p', 'a', 's', 'f', 'g', 'h', 'c', 'n', 'm',
