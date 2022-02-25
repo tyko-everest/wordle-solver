@@ -7,15 +7,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'Code'",
+            "name": "Debug executable 'wordle_solver'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=Code",
-                    "--package=Code"
+                    "--bin=wordle_solver",
+                    "--package=wordle_solver"
                 ],
                 "filter": {
-                    "name": "Code",
+                    "name": "wordle_solver",
                     "kind": "bin"
                 }
             },
@@ -25,16 +25,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'Code'",
+            "name": "Debug unit tests in executable 'wordle_solver'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=Code",
-                    "--package=Code"
+                    "--bin=wordle_solver",
+                    "--package=wordle_solver"
                 ],
                 "filter": {
-                    "name": "Code",
+                    "name": "wordle_solver",
                     "kind": "bin"
                 }
             },

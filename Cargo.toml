@@ -1,5 +1,5 @@
 [package]
-name = "Code"
+name = "wordle_solver"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,3 +9,4 @@ edition = "2021"
 csv = "1.1"
 itertools = "0.10"
 text_io = "0.1.9"
+rand = "0.8.4"

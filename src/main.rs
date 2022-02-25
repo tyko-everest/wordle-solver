@@ -1,4 +1,5 @@
 use itertools::izip;
+use rand::{thread_rng, Rng};
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::vec;
@@ -187,13 +188,14 @@ fn get_scores(words: &Vec<String>, freqs: &LetterFreq, info: &KnownInfo) -> Vec<
             score_total += freqs.get_total_count(c);
         }
 
-        let score = score_pos + score_total * freqs.get_pos_max(0) / freqs.get_total_max() / 3;
-        // let score = score_pos;
+        // let score = score_pos - score_total * freqs.get_pos_max(0) / freqs.get_total_max() / 10;
+        let score = score_pos;
         scores.push(score as usize);
     }
     scores
 }
 
+// gets the single best word based on the scores
 fn get_best_word(words: &Vec<String>, scores: &Vec<usize>) -> String {
     let mut best_word: &String = &String::new();
     let mut best_score = 0;
@@ -204,6 +206,24 @@ fn get_best_word(words: &Vec<String>, scores: &Vec<usize>) -> String {
         }
     }
     best_word.clone()
+}
+
+// returns the top num words, or less if less available
+fn get_best_words(words: &Vec<String>, scores: &Vec<usize>, num: usize) -> Vec<String> {
+    let num = std::cmp::min(num, words.len());
+    let mut best_words: Vec<String> = vec![String::with_capacity(5); num];
+    let mut best_scores: Vec<usize> = vec![0; num];
+    for (word, score) in izip!(words, scores) {
+        for (best_word, best_score) in izip!(best_words.iter_mut(), best_scores.iter_mut()) {
+            if *score > *best_score {
+                *best_score = *score;
+                *best_word = word.clone();
+                break;
+            }
+        }
+    }
+    best_words.retain(|s| !s.is_empty());
+    best_words
 }
 
 // make a guess and get back the known info from that guess
@@ -251,9 +271,14 @@ fn find_word(target_word: &String, words: &Vec<String>) -> usize {
         let freqs = get_letter_freqs(&words);
         let scores = get_scores(&words, &freqs, &info);
         let best_word = get_best_word(&words, &scores);
+        // let num = 2;
+        // let best_words = get_best_words(&words, &scores, num);
+        // let mut rng = thread_rng();
+        // let best_word = &best_words[rng.gen_range(0..best_words.len())];
+        #[cfg(debug_assertions)]
         println!("guessing: {}", best_word);
         count += 1;
-        if best_word == *target_word {
+        if *best_word == *target_word {
             return count;
         } else {
             make_guess(&best_word, &target_word, &mut info);
@@ -271,7 +296,7 @@ fn main() {
     let stdin = io::stdin();
     let mut stdout = io::stdout();
 
-    find_word(&"angry".to_string(), &words);
+    find_word(&"abbey".to_string(), &words);
 
     // loop {
     //     let mut target_word = String::new();
